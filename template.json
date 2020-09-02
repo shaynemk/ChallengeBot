@@ -1,0 +1,13 @@
+{
+    "name": "",
+    "start": "",
+    "end": "",
+    "requirements": {
+        "default": {
+            "trackable": false,
+            "default": 0,
+            "goal": 0
+        }
+    },
+    "participants": []
+}
