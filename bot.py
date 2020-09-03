@@ -18,14 +18,18 @@ HELP_CB = 'Use this command to document your challenge progress (requires Challe
 JSON_CHALLENGES_FILE = 'challenges.json'
 JSON_TEMPLATE = 'template.json'
 CHALLENGES = {}
+#TEMPLATE = '{"name": "","start": "","end": "","requirements": {}}'
 TEMPLATE = {}
 newChallenge = {}
+newChallengeTime = ''
+newRequirements = {}
 
 
 #---------------------------------------------
 # begin helpers
 #---------------------------------------------
 def readJSON():
+    global CHALLENGES, TEMPLATE
     with open(JSON_CHALLENGES_FILE) as f:
         CHALLENGES = json.load(f)
     with open(JSON_TEMPLATE) as f:
@@ -37,15 +41,48 @@ def writeJSON():
 
 def init_JSON():
     readJSON()
-    print(json.dumps(CHALLENGES, indent=2))
+    printAll()
+
+def printAll():
+    print(f'Challenges JSON:\n{json.dumps(CHALLENGES, indent=2)}')
+
+def printNew():
+    print(f'New Challenge:\n{json.dumps(newChallenge, indent=2)}')
+
+def printNewRequirements():
+    print(f'New Requirements:\n{json.dumps(newRequirements, indent=2)}')
+
+def printTemplate():
+    print(f'Template JSON:\n{json.dumps(TEMPLATE, indent=2)}')
+
+def list(_id):
+    print(CHALLENGES.get(_id))
+
+def challengesAll(ctx):
+    content = ''
+    content = ', '.join(CHALLENGES.keys())
+    ctx.send(content)
 
 def startNewChallenge():
+    global newChallenge
+    global newChallengeTime
     newChallenge = TEMPLATE.copy()
-
-def createNewChallenge():
     newChallengeTime = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).isoformat()
-    CHALLENGES[newChallengeTime] = newChallenge
 
+def saveNewChallenge():
+    newChallenge["requirements"] = newRequirements
+    CHALLENGES[newChallengeTime] = newChallenge
+    writeJSON()
+    cancelNew()
+    printAll()
+
+def cancelNew():
+    newChallenge.clear()
+    newRequirements.clear()
+    newChallengeTime = ''
+
+def clearChannel(ctx):
+    ctx.channel.purge()
 
 #---------------------------------------------
 # begin bot specifics
@@ -69,7 +106,7 @@ async def on_command_error(ctx, error):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
 
-@bot.command(name='cbadmin new', help=HELP_ADMIN_NEW)
+@bot.command(name='cbanew', help='cba new <name>')
 @commands.has_role(RO_CHALLENGER)
 async def cbadmin_new(ctx, _name, _startDate, _endDate):
     if ctx.message.author == bot.user:
@@ -78,48 +115,74 @@ async def cbadmin_new(ctx, _name, _startDate, _endDate):
     newChallenge['name'] = _name
     newChallenge['start'] = _startDate
     newChallenge['end'] = _endDate
+    printNew()
+    await ctx.send(f'Drafted new challenge, named "{_name}", running from {_startDate} to {_endDate}.\nUse "{CMD_PREFIX}cbareqadd <name> <number>" to add requirements to the challenge.')
 
-@bot.command(name='cbadmin start', help='start date')
+@bot.command(name='cbacancel', help='cba cancel')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_start(ctx, _startDate):
+async def cbadmin_cancel(ctx):
     if ctx.message.author == bot.user:
         return
-    newChallenge['start'] = _startDate
+    cancelNew()
+    printNew()
 
-@bot.command(name='cbadmin end', help='end date')
+@bot.command(name='cbareqadd', help='cba req add <key> <number>')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_end(ctx, _endDate):
+async def cbadmin_req_add(ctx, _req, _value : int):
     if ctx.message.author == bot.user:
         return
-    newChallenge['end'] = _endDate
+    newRequirements[_req] = _value
+    printNewRequirements()
+    await ctx.send(f'Added requirement "{_value} {_req}(s)" to \"{newChallenge.get("name")}\". Add more, or use "{CMD_PREFIX}cbasave" to save.')
 
-@bot.command(name='cbadmin req add', help='cbadmin req add <key> <number>')
+@bot.command(name='cbareqdel', help='cba req del <key> <number>')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_req_add(ctx, _key, _value : int):
+async def cbadmin_req_del(ctx, _req, _value : int):
     if ctx.message.author == bot.user:
         return
-    newChallenge['requirements'][_key] = _value
+    newRequirements.pop(_req)
+    printNewRequirements()
+    await ctx.send(f'Removed requirement "{_req}".')
 
-@bot.command(name='cbadmin req del', help='cbadmin req del <key> <number>')
+@bot.command(name='cbasave', help='#asdf')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_req_del(ctx, _key, _value : int):
+async def cbadmin_save(ctx):
     if ctx.message.author == bot.user:
         return
-    newChallenge['requirements'][_key].pop
+    if newChallengeTime != '':
+        saveNewChallenge()
+        printAll()
+        await ctx.send(f'Created new challenge (ID: \'{newChallengeTime}\')')
+    else:
+        print(f'Failed to create')
 
-@bot.command(name='cbadmin create', help='#asdf')
+@bot.command(name='cbaprint', help='cba print <all/new>')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_create(ctx):
-    if ctx.message.author == bot.user:
-        return
-    createNewChallenge()
-
+async def cbadmin_print(ctx, _json):
+    if _json == 'all':
+        printAll()
+    elif _json == 'new':
+        printNew()
+    elif _json == 'template':
+        printTemplate()
 
 @bot.command(name='cb')
 @commands.has_role(RO_CHALLENGED)
-async def cb(ctx):
+async def cb(ctx, *args):
     if ctx.message.author == bot.user:
         return
+    if len(args) > 0:
+        if args[0] == 'list':
+            if len(args) > 1:
+                list(args[1])
+            else:
+                printAll()
+        elif args[0] == 'me':
+            # respond with user's current status
+            print(f'')
+        elif args[0] == 'all':
+            # respond with how everyone is doing
+            print(f'')
 
 
 init_JSON()
