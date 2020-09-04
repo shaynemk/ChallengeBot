@@ -3,6 +3,7 @@
 # TODO:
 # || now ||
 # - enable users to join/leave challenges
+# - join challenges with (user).id but display (user).nick
 #
 # || soonish ||
 # - draft up leaderboard channel management
@@ -12,6 +13,7 @@
 # - allow picture uploads
 # - allow users to participate in multiple challenges at once
 # - remove assumptions that we only have one challenge running at once
+# - add in some randomized congratulatory responses after updating challenge states
 
 
 import os, json, discord, datetime
@@ -81,9 +83,9 @@ def getAllChallenges():
     challengesMsg = ''
     for _key in CHALLENGES:
         if challengesMsg != '':
-            challengesMsg = f'{challengesMsg}\n{CHALLENGES[_key].get("name")} (ID: {_key})'
+            challengesMsg = f'{challengesMsg}\n\"{CHALLENGES[_key].get("name")}\" (ID: {_key})'
         else:
-            challengesMsg = f'{CHALLENGES[_key].get("name")} (ID: {_key})'
+            challengesMsg = f'\"{CHALLENGES[_key].get("name")}\" (ID: {_key})'
     debug(f'Found these challenges: {challengesMsg}')
     return challengesMsg
 
@@ -98,15 +100,31 @@ def update(_user, _args):
         _id = getParticipating(_user)
         _req = _args[1]
         _val = _args[2]
-        if not _id == 'none':
-            if _user in CHALLENGES[_id]['participants'].keys():
-                CHALLENGES[_id]['participants'][_user][_req] = _val
-                msg = f'Updated {_user}\'s participation in {CHALLENGES[_id]["name"]}\'s required {CHALLENGES[_id]["requirements"][_req]} {_req}(s) to {_val}.'
+        if not _id == 'none': # make sure the user is participating in a challenge
+            checkForCurrentEntry(_id,_user)
+            CHALLENGES[_id]['participants'][_user][_req] = _val
+            msg = f'Updated {getUserNameFromID(_user)}\'s participation in {CHALLENGES[_id]["name"]}\'s required {CHALLENGES[_id]["requirements"][_req]} {_req}(s) to {_val}.'
         else:
             msg = f'It appears that you aren\'t participating in any active challenges. Try joining one by using \'cb join <id>\''
     elif len(_args) < 3:
         msg = f'Not enough information. Try \'cb update <requirement> <value>\''        
     return msg
+
+def currentEntryExists(_id,_user):
+    if CHALLENGES[_id]['resetCycle'] == 'daily':
+        currCycle = getDayToday()
+        for _entry in CHALLENGES[_id]['participants'][_user].keys():
+            if _entry.startswith(currCycle):
+                return True
+        return False
+    else:
+        # TODO: implement other challenges (hourly/weekly/monthly/etc)
+        print(f'')
+
+def checkForCurrentEntry(_id,_user):
+    if not currentEntryExists(_id,_user):
+        global CHALLENGES
+        CHALLENGES[_id]['participants'][_user][getNowTime()].fromkeys(CHALLENGES[_id]['requirements'],0)
 
 def activateChallenge(_id, _active):
     global CHALLENGES
@@ -121,15 +139,26 @@ def getParticipating(_user):
     return 'none'
 
 # get all challenges user is participating in
-#def getParticipating(_user):
-#    participatingIn = []
-#    for id,chall in CHALLENGES.items():
-#        if chall["active"] and _user in chall["participants"].keys():
-#            participatingIn.append(id)
-#    return participatingIn
+def getAllParticipating(_user):
+    participatingIn = []
+    for id,chall in CHALLENGES.items():
+        if chall["active"] and _user in chall["participants"].keys():
+            participatingIn.append(id)
+    return participatingIn
+
+def joinChallenge(_user,_id):
+    if not getParticipating(_user) == 'none':
+        global CHALLENGES
+        CHALLENGES[_id]['participating'].append(_user)
+
+def getUserNameFromID(_id):
+    return bot.get_user(_id)
 
 def getNowTime():
-    return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%M%d%H%M%S%f")
+    return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%m%d%H%M%S%f")
+
+def getDayToday():
+    return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%m%d")
 
 def startNewChallenge():
     global newChallenge
@@ -271,23 +300,21 @@ async def cbadmin_activate(ctx, _id: int, _active: bool):
     msg = activateChallenge(_id,_active)
     await ctx.send(msg)
 
-@bot.command(name='cb', help='cb [list] - show current challenge(s).\ncb join <id> - join challenge corresponding to <id>.\ncb update <requirement> <update> - Update your challenge status on <requirement> with <update>.')
+@bot.command(name='cb', help='cb - show current challenge(s).\ncb join <id> - join challenge corresponding to <id>.\ncb update <requirement> <update> - Update your challenge status on <requirement> with <update>.')
 async def cb(ctx, *args):
     if ctx.message.author == bot.user:
         return
     if len(args) > 0:
-        if args[0] == 'list':
-            if len(args) > 1:
-                msg = list(args[1])
-            else:
-                printAll()
-        elif args[0] == 'me' or args[0] == 'all':
+        if args[0] == 'me' or args[0] == 'all':
             # respond with user's current status
             msg = list(args[0])
+        elif args[0] == 'join':
+            if (not ctx.message.author.has_role(RO_CHALLENGED) or getParticipating(ctx.message.author.id) == 'none') and len(args) >= 2:
+                joinChallenge(ctx.message.author.id, args[1])
         elif args[0] == 'update':
             if ctx.message.author.has_role(RO_CHALLENGED):
                 # user has role, now check for challenges and update
-                msg = update(ctx.message.author, args)
+                msg = update(ctx.message.author.id, args)
             else: # user does not have the role
                 msg = f'You don\'t appear to have the appropriate role ({RO_CHALLENGED}). Join a challenge via \"({CMD_PREFIX}cb join <id>\" to join a challenge or have someone give you the role.'
         else: # command not understood
