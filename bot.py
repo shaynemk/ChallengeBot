@@ -1,11 +1,18 @@
 # bot.py
 
 # TODO:
+# || now ||
+# - enable users to join/leave challenges
+#
+# || soonish ||
+# - draft up leaderboard channel management
 # - consolidate cba* commands into singular 'cba'
+#
+# || later/maybe ||
 # - allow picture uploads
-# - manage challenge leaderboard channel
-# - remove assumptions that we only have one challenge running at once
 # - allow users to participate in multiple challenges at once
+# - remove assumptions that we only have one challenge running at once
+
 
 import os, json, discord, datetime
 from dotenv import load_dotenv
@@ -27,7 +34,6 @@ HELP_CB = 'Use this command to document your challenge progress (requires Challe
 JSON_CHALLENGES_FILE = 'challenges.json'
 JSON_TEMPLATE = 'template.json'
 CHALLENGES = {}
-#TEMPLATE = '{"name": "","start": "","end": "","requirements": {}}'
 TEMPLATE = {}
 newChallenge = {}
 newChallengeTime = ''
@@ -56,50 +62,71 @@ def debug(_msg):
         print('[DEBUG]: ',_msg)
 
 def printAll():
-    print(f'Challenges JSON:\n{json.dumps(CHALLENGES, indent=2)}')
+    debug(f'Challenges JSON:\n{json.dumps(CHALLENGES, indent=2)}')
 
 def printNew():
-    print(f'New Challenge:\n{json.dumps(newChallenge, indent=2)}')
+    debug(f'New Challenge:\n{json.dumps(newChallenge, indent=2)}')
 
 def printNewRequirements():
-    print(f'New Requirements:\n{json.dumps(newRequirements, indent=2)}')
+    debug(f'New Requirements:\n{json.dumps(newRequirements, indent=2)}')
 
 def printTemplate():
-    print(f'Template JSON:\n{json.dumps(TEMPLATE, indent=2)}')
+    debug(f'Template JSON:\n{json.dumps(TEMPLATE, indent=2)}')
 
 def list(_id):
     debug(CHALLENGES.get(_id))
     return CHALLENGES.get(_id)
 
-def getChallenges():
+def getAllChallenges():
     challengesMsg = ''
     for _key in CHALLENGES:
         if challengesMsg != '':
             challengesMsg = f'{challengesMsg}\n{CHALLENGES[_key].get("name")} (ID: {_key})'
         else:
             challengesMsg = f'{CHALLENGES[_key].get("name")} (ID: {_key})'
+    debug(f'Found these challenges: {challengesMsg}')
     return challengesMsg
 
 # update user's progress as requested
-def update(_args):
+def update(_user, _args):
+    global CHALLENGES
     # 3 possible update states:
-    # user is smart: in challenge, and is correct
-    if _args[0] == '':
-        print(f'')
+    # user is smart: in active challenge, and is correct
+    # user didnt include both k,v entries for the update
+    # user isnt listed as participating in any challenge
+    if len(_args) >= 3:
+        _id = getParticipating(_user)
+        _req = _args[1]
+        _val = _args[2]
+        if not _id == 'none':
+            if _user in CHALLENGES[_id]['participants'].keys():
+                CHALLENGES[_id]['participants'][_user][_req] = _val
+                msg = f'Updated {_user}\'s participation in {CHALLENGES[_id]["name"]}\'s required {CHALLENGES[_id]["requirements"][_req]} {_req}(s) to {_val}.'
+        else:
+            msg = f'It appears that you aren\'t participating in any active challenges. Try joining one by using \'cb join <id>\''
+    elif len(_args) < 3:
+        msg = f'Not enough information. Try \'cb update <requirement> <value>\''        
+    return msg
 
-# TODO: remove assumption that we're only gonna have one active challenge at a time
 def activateChallenge(_id, _active):
     global CHALLENGES
     CHALLENGES[_id]['active'] = _active
     return f'Challenge \"{CHALLENGES[_id]["name"]}\" is now {"active" if _active else "not active"}'
 
-# get challenges user is participating in
+# get the first challenge user is participating in
 def getParticipating(_user):
-    participatingIn = []
     for id,chall in CHALLENGES.items():
         if chall["active"] and _user in chall["participants"].keys():
-            participatingIn.append(id)
-    return participatingIn
+            return id
+    return 'none'
+
+# get all challenges user is participating in
+#def getParticipating(_user):
+#    participatingIn = []
+#    for id,chall in CHALLENGES.items():
+#        if chall["active"] and _user in chall["participants"].keys():
+#            participatingIn.append(id)
+#    return participatingIn
 
 def getNowTime():
     return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%M%d%H%M%S%f")
@@ -260,13 +287,13 @@ async def cb(ctx, *args):
         elif args[0] == 'update':
             if ctx.message.author.has_role(RO_CHALLENGED):
                 # user has role, now check for challenges and update
-                msg = update(args)
+                msg = update(ctx.message.author, args)
             else: # user does not have the role
                 msg = f'You don\'t appear to have the appropriate role ({RO_CHALLENGED}). Join a challenge via \"({CMD_PREFIX}cb join <id>\" to join a challenge or have someone give you the role.'
         else: # command not understood
             msg = 'I didn\' understand that command.'
     else: # no command given, default to showing all challenges
-        msg = f'These are the challenges I\'m tracking:\n{getChallenges()}'
+        msg = f'These are the challenges I\'m tracking:\n{getAllChallenges()}'
     await ctx.send(msg)
 
 init_JSON()
