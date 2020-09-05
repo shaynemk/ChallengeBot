@@ -1,1 +1,1 @@
-{"20200904230810269063": {"name": "test", "start": "1", "end": "2", "resetCycle": "daily", "active": 1, "requirements": {"monkeys": 5, "chimps": 2}, "participants": {"141709062478888960": {"20200905053144853081": {"monkeys": "3", "chimps": 0}}}}}
+{"20200905061125848296": {"name": "test", "start": "20200901000000000000", "end": "20200930000000000000", "resetCycle": "daily", "active": 1, "requirements": {"money": 500, "funs": 10000}, "participants": {"141709062478888960": {"20200905064016714901": {"money": 0, "funs": 0}}}}}

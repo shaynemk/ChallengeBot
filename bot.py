@@ -10,6 +10,7 @@
 # - figure out how to fix the help documentation
 #
 # || later/maybe ||
+# - add timezone spec and auto conversion to user inside of challenges/participants. but how to persist across challenges?
 # - allow picture uploads
 # - allow users to participate in multiple challenges at once
 # - remove assumptions that we only have one challenge running at once
@@ -40,6 +41,10 @@ TEMPLATE = {}
 newChallenge = {}
 newChallengeTime = ''
 newRequirements = {}
+
+DATEUTC = "%Y%m%d%H%M%S%f"
+DATEDMON = "%d %b"
+
 
 #---------------------------------------------
 # begin helpers
@@ -75,7 +80,8 @@ def debug(_msg):
         print('[DEBUG]: ',_msg)
 
 def printAll():
-    debug(f'Challenges JSON:\n{json.dumps(CHALLENGES, indent=2)}')
+    #debug(f'Challenges JSON:\n{json.dumps(CHALLENGES, indent=2)}')
+    print(f'{json.dumps(CHALLENGES,indent=2)}')
 
 def printNew():
     debug(f'New Challenge:\n{json.dumps(newChallenge, indent=2)}')
@@ -91,12 +97,16 @@ def listChallengeUser(_user):
     if not _id is None:
         msg = f'Challenge: {CHALLENGES[_id]["name"]} (ID: {_id})'
         if len(CHALLENGES[_id]["participants"][str(_user)].keys()) > 0:
-            for _req,_val in CHALLENGES[_id]["participants"][str(_user)].items():
-                msg += f'\n{_req}: {_val}'
+            for _cycle,_reqs in CHALLENGES[_id]["participants"][str(_user)].items():
+                msg += f'\n{dateStrReformat(_cycle,DATEDMON)}: ('
+                for _item in _reqs.keys():
+                    msg += f'{_item}: {_reqs[_item]}, '
         else:
             msg += f'\nNo updates yet. Use \'{CMD_PREFIX}cb update <requirement> <value>\'.'
     else:
         msg = f'Error in listing user\'s challenges.'
+    if msg[-2:] == ', ': # remove any trailing commas and spaces, and close the parenthesis
+        msg = msg[:-2] + ')'
     debug(f'Current status for {_user}:\nmsg')
     return msg
 
@@ -104,8 +114,8 @@ def listChallenge(_id):
     debug(f'starting listChallenge({_id})')
     _chall = CHALLENGES[_id]
     msg = f'__**{_chall["name"]}**__'
-    msg += f'\nStarting: {_chall["start"]}'
-    msg += f'\nEnding: {_chall["end"]}'
+    msg += f'\nStarting: {dateStrReformat(_chall["start"],DATEDMON)}'
+    msg += f'\nEnding: {dateStrReformat(_chall["end"],DATEDMON)}'
     msg += f'\nActive: {_chall["active"]}'
     msg += f'\nReset Cycle: {_chall["resetCycle"]}'
     msg += f'\n\n__Requirements:__'
@@ -129,9 +139,9 @@ def getAllChallenges():
     challengesMsg = ''
     for _key in CHALLENGES:
         if challengesMsg != '':
-            challengesMsg = f'{challengesMsg}\n\"{CHALLENGES[_key].get("name")}\" (ID: {_key})'
+            challengesMsg = f'{challengesMsg}\n\"{CHALLENGES[_key]["name"]}\" (ID: {_key})'
         else:
-            challengesMsg = f'\"{CHALLENGES[_key].get("name")}\" (ID: {_key})'
+            challengesMsg = f'\"{CHALLENGES[_key]["name"]}\" (ID: {_key})'
     debug(f'Found these challenges: {challengesMsg}')
     return challengesMsg
 
@@ -148,7 +158,7 @@ def update(_user, _args):
         _val = _args[2]
         if isParticipating(_user): # make sure the user is participating in a challenge
             checkForCurrentEntry(_id,_user)
-            CHALLENGES[_id]['participants'][str(_user)][getCurrentEntry(_id,_user)][_req] = _val
+            CHALLENGES[_id]['participants'][str(_user)][getCurrentEntry(_id,_user)][_req] = int(_val)
             writeJSON()
             msg = f'Updated {getUserNameFromID(_user)}\'s participation in \"{CHALLENGES[_id]["name"]}\"s required {CHALLENGES[_id]["requirements"][_req]} {_req}(s) to {_val}.'
         else:
@@ -172,7 +182,7 @@ def checkForCurrentEntry(_id,_user):
     if not getCurrentEntry(_id,_user):
         global CHALLENGES
         CHALLENGES[_id]['participants'][str(_user)][getNowTime()] = {}.fromkeys(CHALLENGES[_id]['requirements'].keys(),0)
-        #writeJSON() #probably redundant because we only get called from update() which after updating, saves.
+        writeJSON() #probably redundant because we only get called from update() which after updating, saves.
 
 def activateChallenge(_id, _active):
     debug(f'<activateChallenge> setting {_id} activation to {_active}.')
@@ -225,7 +235,7 @@ def joinChallenge(_user,_id):
         CHALLENGES[_id]['participants'][str(_user)] = {}
         writeJSON()
         debug(f'<joinChallenge({_user},{_id})> user added: {CHALLENGES[_id]["participants"]}')
-        msg = f'Congratulations on joining the challenge: \'{CHALLENGES[_id]["name"]}\', now get to work!'
+        msg = f'Congratulations on joining the challenge: \'{CHALLENGES[_id]["name"]}\', now get to work! Use \'{CMD_PREFIX}cb me to show your current status.'
     else:
         debug(f'<joinChallenge({_user},{_id})> user is already participating in a challenge')
         msg = f'You were not added to this challenge because you\'re already in one.'
@@ -259,10 +269,20 @@ def getUserNameFromID(_id: int):
     return str(_username)
 
 def getNowTime():
-    return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    return getDateString(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc))
 
 def getDayToday():
-    return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%m%d")
+    return getDateString(datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc),"%Y%m%d")
+
+def getDateObject(_input, _format=DATEUTC):
+    return datetime.datetime.strptime(_input,_format)
+
+def getDateString(_input, _format=DATEUTC):
+    return _input.strftime(_format)
+
+# take a date string in our std fmt and make it _format
+def dateStrReformat(_input : str, _format : str):
+    return getDateString(getDateObject(_input),_format)
 
 def startNewChallenge():
     global newChallenge
@@ -319,15 +339,15 @@ async def on_command_error(ctx, error):
 async def on_ready():
     print(f'{bot.user} has connected to Discord!')
 
-@bot.command(name='cbanew', help='cba new <name>')
+@bot.command(name='cbanew', help='cba new <name> <startDate> <endDate> [startTime] [endTime] - draft up <name> challenge, with start/end dates ("2020/09/21") and optionally start/end times in 24hr format ("2301").')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_new(ctx, _name, _startDate, _endDate):
+async def cbadmin_new(ctx, _name, _startDate, _endDate, _startTime = "0000", _endTime = "0000"):
     if ctx.message.author == bot.user:
         return
     startNewChallenge()
     newChallenge['name'] = _name
-    newChallenge['start'] = _startDate
-    newChallenge['end'] = _endDate
+    newChallenge['start'] = getDateString(getDateObject(_startDate+_startTime,"%Y/%m/%d%H%M"))
+    newChallenge['end'] = getDateString(getDateObject(_endDate+_endTime,"%Y/%m/%d%H%M"))
     printNew()
     await ctx.send(f'Drafted new challenge, named "{_name}", running from {_startDate} to {_endDate}.\nUse "{CMD_PREFIX}cbareqadd <name> <number>" to add requirements to the challenge.')
 
@@ -378,11 +398,10 @@ async def cbadmin_delete(ctx, _id= '-1'):
         return
     if _id != '-1':
         debug(f'<cbadelete> _id ({_id}) is not default (-1), continuing.')
+        msg = f'Deleted challenge \"{CHALLENGES[_id].get("name")}\" (ID: \'{_id}\')'
         _return = removeChallenge(_id)
         #printAll()
-        if _return != -1:
-            msg = f'Deleted challenge \"{CHALLENGES[_id].get("name")}\" (ID: \'{_id}\')'
-        else:
+        if _return == -1:
             msg = f'Challenge not found. Name: \"{CHALLENGES[_id].get("name")}\" (ID: {_id})'
     else:
         debug('<cbadelete> _id wasn\'t supplied, can\'t continue deleting.')
@@ -419,7 +438,7 @@ async def cb(ctx, *args):
         if args[0] == 'me': #or args[0] == 'all':
             # respond with user's current status
             msg = listChallengeUser(int(ctx.message.author.id))
-        elif args[0] == 'show':
+        elif args[0] == 'show' or args[0] == 'list':
             if len(args) >= 2 and args[1].isnumeric():
                 msg = listChallenge(args[1])
             else:
@@ -446,7 +465,11 @@ async def cb(ctx, *args):
         else: # command not understood
             msg = 'I didn\' understand that command.'
     else: # no command given, default to showing all challenges
-        msg = f'These are the challenges I\'m tracking:\n{getAllChallenges()}'
+        currChalls = getAllChallenges()
+        if len(currChalls) > 0:
+            msg = f'These are the challenges I\'m tracking:\n{getAllChallenges()}'
+        else:
+            msg = f'I\'m not tracking any challenges. How about you set one up?'
     await ctx.send(msg)
 
 initJSON()
