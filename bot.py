@@ -229,7 +229,7 @@ def leaveChallenge(_user,_id):
     global CHALLENGES
     debug(f'<leaveChallenge({_user},{_id})> CHALLENGES[_id][\'participants\'].keys(): {CHALLENGES[_id]["participants"].keys()}')
     foundIt = False
-    find _users in CHALLENGES[_id]['participants'].keys():
+    for _users in CHALLENGES[_id]['participants'].keys():
         debug(f'<leaveChallenge({_user},{_id})> _user: {type(_user)}, _users: {type(_users)}')
         if str(_user) == _users:
             debug(f'<leaveChallenge({_user},{_id})> trying to leave challenge')
