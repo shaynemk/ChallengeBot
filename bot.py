@@ -52,6 +52,7 @@ def readJSON():
         TEMPLATE = json.load(f)
 
 def writeJSON():
+    global CHALLENGES
     with open(JSON_CHALLENGES_FILE, 'w') as f:
         json.dump(CHALLENGES, f)
 
@@ -75,9 +76,37 @@ def printNewRequirements():
 def printTemplate():
     debug(f'Template JSON:\n{json.dumps(TEMPLATE, indent=2)}')
 
-def list(_id):
-    debug(CHALLENGES.get(_id))
-    return CHALLENGES.get(_id)
+def listChallengeUser(_user):
+    _id = getParticipating(_user)
+    if not _id:
+        msg = f'Challenge: {CHALLENGES[_id]["name"]}'
+        for _req,_val in CHALLENGES[_id]["participants"][_user].items():
+            msg.append(f'\n{_req}: {_val}')
+    debug(f'Current status for {_user}:\nmsg')
+    return msg
+
+def listChallenge(_id):
+    debug(f'starting listChallenge({_id})')
+    _chall = CHALLENGES[_id]
+    msg = f'**{_chall["name"]}**'
+    msg += f'\nStarting: {_chall["start"]}'
+    msg += f'\nEnding: {_chall["end"]}'
+    msg += f'\nActive: {_chall["active"]}'
+    msg += f'\nReset Cycle: {_chall["resetCycle"]}'
+    msg += f'\n\n__Requirements:__'
+    if len(_chall['requirements'].keys()) > 0:
+        for _req in _chall['requirements'].keys():
+            msg += f'\n{_req}: {_chall["requirements"][_req]}'
+    else:
+        msg += f'\nNo Requirements'
+    msg += '\n\n__Participants:__'
+    if len(_chall['participants'].keys()) > 0:
+        for _participant in _chall['participants'].keys():
+            msg += f'\n{getUserNameFromID(_participant)}'
+    else:
+        msg += f'\nNo participants'
+    debug(f'{msg}')
+    return msg
 
 def getAllChallenges():
     challengesMsg = ''
@@ -127,29 +156,37 @@ def checkForCurrentEntry(_id,_user):
         CHALLENGES[_id]['participants'][_user][getNowTime()].fromkeys(CHALLENGES[_id]['requirements'],0)
 
 def activateChallenge(_id, _active):
+    debug(f'<activateChallenge> setting {_id} activation to {_active}.')
     global CHALLENGES
-    CHALLENGES[_id]['active'] = _active
+    CHALLENGES[_id].update(['active',_active])
+    debug(f'<activateChallenge> post setting: {CHALLENGES[_id]["active"]}')
+    writeJSON()
+    debug(f'<activateChallenge> post save: {CHALLENGES[_id]["active"]}')
     return f'Challenge \"{CHALLENGES[_id]["name"]}\" is now {"active" if _active else "not active"}'
 
 # get the first challenge user is participating in
 def getParticipating(_user):
     for id,chall in CHALLENGES.items():
-        if chall["active"] and _user in chall["participants"].keys():
+        if chall["active"] == 1 and _user in chall["participants"].keys():
             return id
-    return 'none'
+    return False
 
 # get all challenges user is participating in
 def getAllParticipating(_user):
     participatingIn = []
     for id,chall in CHALLENGES.items():
-        if chall["active"] and _user in chall["participants"].keys():
+        if chall["active"] == 1 and _user in chall["participants"].keys():
             participatingIn.append(id)
     return participatingIn
 
 def joinChallenge(_user,_id):
-    if not getParticipating(_user) == 'none':
+    if getParticipating(_user) == 'none':
+        debug(f'<joinChallenge({_user},{_id})> user is not participating in any other challenges, attempting to add.')
         global CHALLENGES
-        CHALLENGES[_id]['participating'].append(_user)
+        CHALLENGES[_id]['participating'][_user] = {}
+        writeJSON()
+    else:
+        debug(f'<joinChallenge({_user},{_id})> user is already participating in a challenge')
 
 def getUserNameFromID(_id):
     return bot.get_user(_id)
@@ -167,11 +204,12 @@ def startNewChallenge():
     newChallengeTime = getNowTime()
 
 def saveNewChallenge():
-    global newChallenge, newRequirements, CHALLENGES
+    global newChallenge
+    global newRequirements
+    global CHALLENGES
     newChallenge["requirements"] = newRequirements
     CHALLENGES[newChallengeTime] = newChallenge
     writeJSON()
-    cancelNew()
     printAll()
 
 def cancelNew():
@@ -183,8 +221,10 @@ def cancelNew():
 def removeChallenge(_id):
     global CHALLENGES
     _value = CHALLENGES.pop(_id,-1)
+    debug(f'CHALLENGES.pop({_id},-1) = {_value}')
     writeJSON()
     printAll()
+    #return f'fail/non-exist' if _value == '-1' else f'Successfully deleted challenge (ID: {_id}).'
     return _value
 
 def clearChannel(ctx):
@@ -200,8 +240,8 @@ async def on_error(event, *args, **kwargs):
     with open('err.log', 'a') as f:
         if event == 'on_message':
             f.write(f'Unhandled message: {args[0]}\n')
-        else:
-            raise
+        #else:
+            #raise
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -257,29 +297,29 @@ async def cbadmin_save(ctx):
         return
     if newChallengeTime != '':
         saveNewChallenge()
-        printAll()
         await ctx.send(f'Created new challenge (ID: \'{newChallengeTime}\')')
+        cancelNew()
     else:
         print(f'Failed to create')
 
 @bot.command(name='cbadelete', help='cbadelete <id>')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_delete(ctx, _id=-1):
+async def cbadmin_delete(ctx, _id= '-1'):
     debug('entering <cbadelete>')
     if ctx.message.author == bot.user:
         debug('message author is the bot')
         return
-    if _id != -1:
-        debug('<cbadelete> _id is not default (-1), continuing.')
+    if _id != '-1':
+        debug(f'<cbadelete> _id ({_id}) is not default (-1), continuing.')
         _return = removeChallenge(_id)
-        printAll()
+        #printAll()
         if _return != -1:
             msg = f'Deleted challenge \"{CHALLENGES[_id].get("name")}\" (ID: \'{_id}\')'
         else:
             msg = f'Challenge not found. Name: \"{CHALLENGES[_id].get("name")}\" (ID: {_id})'
     else:
-        debug('<cbadelete> _id is default, can\'t continue deleting.')
-        msg = f'Can\' delete a challenge without knowing the ID of it...'
+        debug('<cbadelete> _id wasn\'t supplied, can\'t continue deleting.')
+        msg = f'Can\' delete a challenge without knowing the ID of it.'
     await ctx.send(msg)
 
 @bot.command(name='cbaprint', help='cba print <all/new>: Printing stuff to the console.')
@@ -294,29 +334,43 @@ async def cbadmin_print(ctx, _json):
 
 @bot.command(name='cbaactive', help='cbaactive <id> (<true>/<false>) - set challenge as active or not')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_activate(ctx, _id: int, _active: bool):
+async def cbadmin_activate(ctx, _id: int, _active: int):
     if ctx.message.author == bot.user:
         return
-    msg = activateChallenge(_id,_active)
+    debug(f'<cbaactive> requested to set active=\'{_active}\'')
+    if _active == 1 or _active == 0:
+        msg = activateChallenge(_id,_active)
+    else:
+        msg = f'To activate, use \'1\'. To deactivate, use \'0\'.'
     await ctx.send(msg)
 
-@bot.command(name='cb', help='cb - show current challenge(s).\ncb join <id> - join challenge corresponding to <id>.\ncb update <requirement> <update> - Update your challenge status on <requirement> with <update>.')
+@bot.command(name='cb', help='cb - show current challenge(s).\ncb list <id> - show challenge information.\ncb join <id> - join challenge corresponding to <id>.\ncb update <requirement> <update> - Update your challenge status on <requirement> with <update>.')
 async def cb(ctx, *args):
     if ctx.message.author == bot.user:
         return
     if len(args) > 0:
-        if args[0] == 'me' or args[0] == 'all':
+        if args[0] == 'me': #or args[0] == 'all':
             # respond with user's current status
-            msg = list(args[0])
+            msg = listChallengeUser(ctx.message.author.id)
+        elif args[0] == 'list':
+            if len(args) >= 2:
+                msg = listChallenge(args[1])
+            else:
+                msg = f'Can\'t display challenge info without the challenge ID.'
         elif args[0] == 'join':
-            if (not ctx.message.author.has_role(RO_CHALLENGED) or getParticipating(ctx.message.author.id) == 'none') and len(args) >= 2:
+            debug(f'<cb join> entered')
+            if len(args) >= 2:
+                debug(f'<cb join> _user: {ctx.message.author.id}, _id: {args[1]}')
                 joinChallenge(ctx.message.author.id, args[1])
+                msg = f'Congratulations on joining the \'{CHALLENGES[_id]["name"]}\' challenge, now get to work!'
+            else:
+                msg = f'fail on joining, weird.'
         elif args[0] == 'update':
             if ctx.message.author.has_role(RO_CHALLENGED):
                 # user has role, now check for challenges and update
                 msg = update(ctx.message.author.id, args)
             else: # user does not have the role
-                msg = f'You don\'t appear to have the appropriate role ({RO_CHALLENGED}). Join a challenge via \"({CMD_PREFIX}cb join <id>\" to join a challenge or have someone give you the role.'
+                msg = f'You don\'t appear to have the appropriate role ({RO_CHALLENGED}). Join a challenge via \"({CMD_PREFIX}cb join <id>\" to join a challenge or ask someone to give you the role.'
         else: # command not understood
             msg = 'I didn\' understand that command.'
     else: # no command given, default to showing all challenges
