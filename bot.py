@@ -391,10 +391,9 @@ async def cbadmin_save(ctx):
 
 @bot.command(name='cbadelete', help='cbadelete <id>')
 @commands.has_role(RO_CHALLENGER)
-async def cbadmin_delete(ctx, _id= '-1'):
+async def cbadmin_delete(ctx, _id = -1):
     debug('entering <cbadelete>')
     if ctx.message.author == bot.user:
-        debug('message author is the bot')
         return
     if _id != '-1':
         debug(f'<cbadelete> _id ({_id}) is not default (-1), continuing.')
