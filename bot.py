@@ -88,10 +88,15 @@ def printTemplate():
 
 def listChallengeUser(_user):
     _id = getParticipating(_user)
-    if not _id:
-        msg = f'Challenge: {CHALLENGES[_id]["name"]}'
-        for _req,_val in CHALLENGES[_id]["participants"][_user].items():
-            msg.append(f'\n{_req}: {_val}')
+    if not _id is None:
+        msg = f'Challenge: {CHALLENGES[_id]["name"]} (ID: {_id})'
+        if len(CHALLENGES[_id]["participants"][str(_user)].keys()) > 0:
+            for _req,_val in CHALLENGES[_id]["participants"][str(_user)].items():
+                msg += f'\n{_req}: {_val}'
+        else:
+            msg += f'\nNo updates yet. Use \'{CMD_PREFIX}cb update <requirement> <value>\'.'
+    else:
+        msg = f'Error in listing user\'s challenges.'
     debug(f'Current status for {_user}:\nmsg')
     return msg
 
@@ -141,31 +146,33 @@ def update(_user, _args):
         _id = getParticipating(_user)
         _req = _args[1]
         _val = _args[2]
-        if isParticipating(_id): # make sure the user is participating in a challenge
+        if isParticipating(_user): # make sure the user is participating in a challenge
             checkForCurrentEntry(_id,_user)
-            CHALLENGES[_id]['participants'][_user][_req] = _val
-            msg = f'Updated {getUserNameFromID(_user)}\'s participation in {CHALLENGES[_id]["name"]}\'s required {CHALLENGES[_id]["requirements"][_req]} {_req}(s) to {_val}.'
+            CHALLENGES[_id]['participants'][str(_user)][getCurrentEntry(_id,_user)][_req] = _val
+            writeJSON()
+            msg = f'Updated {getUserNameFromID(_user)}\'s participation in \"{CHALLENGES[_id]["name"]}\"s required {CHALLENGES[_id]["requirements"][_req]} {_req}(s) to {_val}.'
         else:
             msg = f'It appears that you aren\'t participating in any active challenges. Try joining one by using \'cb join <id>\''
     elif len(_args) < 3:
         msg = f'Not enough information. Try \'cb update <requirement> <value>\''        
     return msg
 
-def currentEntryExists(_id,_user):
+def getCurrentEntry(_id,_user):
     if CHALLENGES[_id]['resetCycle'] == 'daily':
         currCycle = getDayToday()
-        for _entry in CHALLENGES[_id]['participants'][_user].keys():
+        for _entry in CHALLENGES[_id]['participants'][str(_user)].keys():
             if _entry.startswith(currCycle):
-                return True
-        return False
+                return _entry
+        return None
     else:
-        # TODO: implement other challenges (hourly/weekly/monthly/etc)
+        # TODO: implement other cycles (hourly/weekly/monthly/etc)
         print(f'')
 
 def checkForCurrentEntry(_id,_user):
-    if not currentEntryExists(_id,_user):
+    if not getCurrentEntry(_id,_user):
         global CHALLENGES
-        CHALLENGES[_id]['participants'][_user][getNowTime()].fromkeys(CHALLENGES[_id]['requirements'],0)
+        CHALLENGES[_id]['participants'][str(_user)][getNowTime()] = {}.fromkeys(CHALLENGES[_id]['requirements'].keys(),0)
+        #writeJSON() #probably redundant because we only get called from update() which after updating, saves.
 
 def activateChallenge(_id, _active):
     debug(f'<activateChallenge> setting {_id} activation to {_active}.')
@@ -181,7 +188,7 @@ def getParticipating(_user):
     debug(f'<getParticipating({_user})> entered')
     for _id,_chall in CHALLENGES.items():
         debug(f'<getParticipating({_user})> (_id: {_id}, _chall[\"active\"]: {_chall["active"]}, _chall[\"participants\"].keys(): {_chall["participants"].keys()})')
-        if _chall["active"] == 1 and _user in _chall["participants"].keys():
+        if _chall["active"] == 1 and str(_user) in _chall["participants"].keys():
             debug(f'<getParticipating({_user})> _user is participating in this challenge.')
             return _id
         debug(f'<getParticipating({_user})> found no challenges the user is participating in.')
@@ -404,7 +411,7 @@ async def cbadmin_activate(ctx, _id: int, _active: int):
         msg = f'To activate, use \'1\'. To deactivate, use \'0\'.'
     await ctx.send(msg)
 
-@bot.command(name='cb', help='cb - show current challenge(s).\ncb list <id> - show challenge information.\ncb join <id> - join challenge corresponding to <id>.\ncb update <requirement> <update> - Update your challenge status on <requirement> with <update>.')
+@bot.command(name='cb', help='cb - show current challenge(s).\ncb show <id> - show challenge information.\ncb join <id> - join challenge corresponding to <id>.\ncb update <requirement> <update> - Update your challenge status on <requirement> with <update>.')
 async def cb(ctx, *args):
     if ctx.message.author == bot.user:
         return
@@ -412,7 +419,7 @@ async def cb(ctx, *args):
         if args[0] == 'me': #or args[0] == 'all':
             # respond with user's current status
             msg = listChallengeUser(int(ctx.message.author.id))
-        elif args[0] == 'list':
+        elif args[0] == 'show':
             if len(args) >= 2 and args[1].isnumeric():
                 msg = listChallenge(args[1])
             else:
@@ -425,7 +432,7 @@ async def cb(ctx, *args):
             else:
                 msg = f'fail on joining, weird.'
         elif args[0] == 'update':
-            if ctx.message.author.has_role(RO_CHALLENGED):
+            if discord.ext.commands.has_role(RO_CHALLENGED):
                 # user has role, now check for challenges and update
                 msg = update(int(ctx.message.author.id), args)
             else: # user does not have the role
