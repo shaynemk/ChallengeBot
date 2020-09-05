@@ -16,7 +16,7 @@
 # - add in some randomized congratulatory responses after updating challenge states
 
 
-import os, json, discord, datetime
+import os, json, discord, datetime, logging
 from dotenv import load_dotenv
 from discord.ext import commands
 
@@ -25,7 +25,7 @@ load_dotenv()
 DEBUG = os.getenv('DEBUG')
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 CMD_PREFIX = os.getenv('CMD_PREFIX')
-CH_CHALLENGE = os.getenv('CH_CHALLENGE')
+CH_LEADERBOARD = os.getenv('CH_LEADERBOARD')
 CH_GENERAL = os.getenv('CH_GENERAL')
 RO_CHALLENGED = os.getenv('RO_CHALLENGED')
 RO_CHALLENGER = os.getenv('RO_CHALLENGER')
@@ -48,17 +48,27 @@ def readJSON():
     global CHALLENGES, TEMPLATE
     with open(JSON_CHALLENGES_FILE) as f:
         CHALLENGES = json.load(f)
+    f.close()
     with open(JSON_TEMPLATE) as f:
         TEMPLATE = json.load(f)
+    f.close()
 
 def writeJSON():
     global CHALLENGES
     with open(JSON_CHALLENGES_FILE, 'w') as f:
         json.dump(CHALLENGES, f)
+    f.close()
 
-def init_JSON():
+def initJSON():
     readJSON()
     printAll()
+
+def initLogging():
+    logger = logging.getLogger('discord')
+    logger.setLevel(logging.DEBUG)
+    handler = logging.FileHandler(filename='challengebot.log', encoding='utf-8', mode='w')
+    handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s'))
+    logger.addHandler(handler)
 
 def debug(_msg):
     if DEBUG:
@@ -88,7 +98,7 @@ def listChallengeUser(_user):
 def listChallenge(_id):
     debug(f'starting listChallenge({_id})')
     _chall = CHALLENGES[_id]
-    msg = f'**{_chall["name"]}**'
+    msg = f'__**{_chall["name"]}**__'
     msg += f'\nStarting: {_chall["start"]}'
     msg += f'\nEnding: {_chall["end"]}'
     msg += f'\nActive: {_chall["active"]}'
@@ -101,7 +111,9 @@ def listChallenge(_id):
         msg += f'\nNo Requirements'
     msg += '\n\n__Participants:__'
     if len(_chall['participants'].keys()) > 0:
+        debug(f'<listChallenge({_id})> _chall[\'participants\'].keys(): {_chall["participants"].keys()}')
         for _participant in _chall['participants'].keys():
+            debug(f'<listChallenge({_id})> _participant: {_participant} [{type(_participant)}]')
             msg += f'\n{getUserNameFromID(_participant)}'
     else:
         msg += f'\nNo participants'
@@ -129,7 +141,7 @@ def update(_user, _args):
         _id = getParticipating(_user)
         _req = _args[1]
         _val = _args[2]
-        if not _id == 'none': # make sure the user is participating in a challenge
+        if isParticipating(_id): # make sure the user is participating in a challenge
             checkForCurrentEntry(_id,_user)
             CHALLENGES[_id]['participants'][_user][_req] = _val
             msg = f'Updated {getUserNameFromID(_user)}\'s participation in {CHALLENGES[_id]["name"]}\'s required {CHALLENGES[_id]["requirements"][_req]} {_req}(s) to {_val}.'
@@ -166,9 +178,28 @@ def activateChallenge(_id, _active):
 
 # get the first challenge user is participating in
 def getParticipating(_user):
-    for id,chall in CHALLENGES.items():
-        if chall["active"] == 1 and _user in chall["participants"].keys():
-            return id
+    debug(f'<getParticipating({_user})> entered')
+    for _id,_chall in CHALLENGES.items():
+        debug(f'<getParticipating({_user})> (_id: {_id}, _chall[\"active\"]: {_chall["active"]}, _chall[\"participants\"].keys(): {_chall["participants"].keys()})')
+        if _chall["active"] == 1 and _user in _chall["participants"].keys():
+            debug(f'<getParticipating({_user})> _user is participating in this challenge.')
+            return _id
+        debug(f'<getParticipating({_user})> found no challenges the user is participating in.')
+    return 'none'
+
+# is the user participating in any challenge
+def isParticipating(_user):
+    debug(f'<isParticipating({_user})> entered; _user: {type(_user)}')
+    for _id,_chall in CHALLENGES.items():
+        debug(f'<isParticipating({_user})> (_id: {_id}, \'active\': {_chall["active"]}, \'participants\': {_chall["participants"].keys()})')
+        #if DEBUG:
+        #    for _part in _chall["participants"].keys():
+        #        dMSG += f'{type(_part)}, '
+        #debug(f'<isParticipating({_user})> types: {dMSG}')
+        if _chall["active"] == 1 and str(_user) in _chall["participants"].keys():
+            debug(f'<isParticipating({str(_user)})> _user is participating in this challenge.')
+            return True
+        debug(f'<isParticipating({str(_user)})> found no challenges the user is participating in.')
     return False
 
 # get all challenges user is participating in
@@ -180,16 +211,49 @@ def getAllParticipating(_user):
     return participatingIn
 
 def joinChallenge(_user,_id):
-    if getParticipating(_user) == 'none':
+    debug(f'<joinChallenge({_user},{_id})> _user: {type(_user)}, _id: {type(_id)}')
+    if not isParticipating(_user):
         debug(f'<joinChallenge({_user},{_id})> user is not participating in any other challenges, attempting to add.')
         global CHALLENGES
-        CHALLENGES[_id]['participating'][_user] = {}
+        CHALLENGES[_id]['participants'][str(_user)] = {}
         writeJSON()
+        debug(f'<joinChallenge({_user},{_id})> user added: {CHALLENGES[_id]["participants"]}')
+        msg = f'Congratulations on joining the \'{CHALLENGES[_id]["name"]}\' challenge, now get to work!'
     else:
         debug(f'<joinChallenge({_user},{_id})> user is already participating in a challenge')
+        msg = f'You were not added to this challenge because you\'re already in one.'
+    return msg
 
-def getUserNameFromID(_id):
-    return bot.get_user(_id)
+def leaveChallenge(_user,_id):
+    debug(f'<leaveChallenge({_user},{_id})> entered, _user: {type(_user)}, _id: {type(_id)}')
+    global CHALLENGES
+    debug(f'<leaveChallenge({_user},{_id})> CHALLENGES[_id][\'participants\'].keys(): {CHALLENGES[_id]["participants"].keys()}')
+    foundIt = False
+    find _users in CHALLENGES[_id]['participants'].keys():
+        debug(f'<leaveChallenge({_user},{_id})> _user: {type(_user)}, _users: {type(_users)}')
+        if str(_user) == _users:
+            debug(f'<leaveChallenge({_user},{_id})> trying to leave challenge')
+            CHALLENGES[_id]['participants'].pop(str(_user))
+            writeJSON()
+            debug(f'<leaveChallenge({_user},{_id})> user removed from challenge')
+            msg = f'You have been removed from \"{CHALLENGES[_id]["name"]}\".'
+            foundIt = True
+    if not foundIt: 
+        debug(f'<leaveChallenge({_user},{_id})> user not found in challenge ({CHALLENGES[_id]["participants"].keys()})')
+        msg = f'You aren\'t listed as participating in \"{CHALLENGES[_id]["name"]}\".'
+    return msg
+
+def getUserNameFromID(_id: int):
+    #if _id is str:
+    #    _id2 = int(_id)
+    #    _id = _id2
+    #    debug(f'<getUserNameFromID({_id})> _id: {type(_id)}, _id2: {type(_id2)}')
+    _username = bot.get_user(_id)
+    if _username is None:
+        debug(f'<getUserNameFromID({_id})> _username is {type(_username)}, switching _id from str to int.')
+        _username = bot.get_user(int(_id))
+    debug(f'<getUserNameFromID({_id})> _username: {_username} ({type(_username)})')
+    return str(_username)
 
 def getNowTime():
     return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc).strftime("%Y%m%d%H%M%S%f")
@@ -351,31 +415,37 @@ async def cb(ctx, *args):
     if len(args) > 0:
         if args[0] == 'me': #or args[0] == 'all':
             # respond with user's current status
-            msg = listChallengeUser(ctx.message.author.id)
+            msg = listChallengeUser(int(ctx.message.author.id))
         elif args[0] == 'list':
-            if len(args) >= 2:
+            if len(args) >= 2 and args[1].isnumeric():
                 msg = listChallenge(args[1])
             else:
                 msg = f'Can\'t display challenge info without the challenge ID.'
         elif args[0] == 'join':
             debug(f'<cb join> entered')
-            if len(args) >= 2:
-                debug(f'<cb join> _user: {ctx.message.author.id}, _id: {args[1]}')
-                joinChallenge(ctx.message.author.id, args[1])
-                msg = f'Congratulations on joining the \'{CHALLENGES[_id]["name"]}\' challenge, now get to work!'
+            if len(args) >= 2 and args[1].isnumeric():
+                debug(f'<cb join> _user: {int(ctx.message.author.id)}, _id: {args[1]}')
+                msg = joinChallenge(int(ctx.message.author.id), args[1])
             else:
                 msg = f'fail on joining, weird.'
         elif args[0] == 'update':
             if ctx.message.author.has_role(RO_CHALLENGED):
                 # user has role, now check for challenges and update
-                msg = update(ctx.message.author.id, args)
+                msg = update(int(ctx.message.author.id), args)
             else: # user does not have the role
                 msg = f'You don\'t appear to have the appropriate role ({RO_CHALLENGED}). Join a challenge via \"({CMD_PREFIX}cb join <id>\" to join a challenge or ask someone to give you the role.'
+        elif args[0] == 'leave':
+            debug(f'<cb leave> {args}')
+            if len(args) >= 2 and args[1].isnumeric():
+                msg = leaveChallenge(int(ctx.message.author.id), args[1])
+            else:
+                msg = f'Can\'t leave a challenge without knowing which challenge you wish to leave.'
         else: # command not understood
             msg = 'I didn\' understand that command.'
     else: # no command given, default to showing all challenges
         msg = f'These are the challenges I\'m tracking:\n{getAllChallenges()}'
     await ctx.send(msg)
 
-init_JSON()
+initJSON()
+initLogging()
 bot.run(DISCORD_TOKEN)
