@@ -2,12 +2,12 @@
 
 # TODO:
 # || now ||
-# - enable users to join/leave challenges
-# - join challenges with (user).id but display (user).nick
+# - fix date management/displays for challenges
 #
 # || soonish ||
 # - draft up leaderboard channel management
 # - consolidate cba* commands into singular 'cba'
+# - figure out how to fix the help documentation
 #
 # || later/maybe ||
 # - allow picture uploads
