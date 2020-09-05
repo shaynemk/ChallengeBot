@@ -218,7 +218,7 @@ def joinChallenge(_user,_id):
         CHALLENGES[_id]['participants'][str(_user)] = {}
         writeJSON()
         debug(f'<joinChallenge({_user},{_id})> user added: {CHALLENGES[_id]["participants"]}')
-        msg = f'Congratulations on joining the \'{CHALLENGES[_id]["name"]}\' challenge, now get to work!'
+        msg = f'Congratulations on joining the challenge: \'{CHALLENGES[_id]["name"]}\', now get to work!'
     else:
         debug(f'<joinChallenge({_user},{_id})> user is already participating in a challenge')
         msg = f'You were not added to this challenge because you\'re already in one.'
@@ -228,17 +228,13 @@ def leaveChallenge(_user,_id):
     debug(f'<leaveChallenge({_user},{_id})> entered, _user: {type(_user)}, _id: {type(_id)}')
     global CHALLENGES
     debug(f'<leaveChallenge({_user},{_id})> CHALLENGES[_id][\'participants\'].keys(): {CHALLENGES[_id]["participants"].keys()}')
-    foundIt = False
-    for _users in CHALLENGES[_id]['participants'].keys():
-        debug(f'<leaveChallenge({_user},{_id})> _user: {type(_user)}, _users: {type(_users)}')
-        if str(_user) == _users:
-            debug(f'<leaveChallenge({_user},{_id})> trying to leave challenge')
-            CHALLENGES[_id]['participants'].pop(str(_user))
-            writeJSON()
-            debug(f'<leaveChallenge({_user},{_id})> user removed from challenge')
-            msg = f'You have been removed from \"{CHALLENGES[_id]["name"]}\".'
-            foundIt = True
-    if not foundIt: 
+    if str(_user) in CHALLENGES[_id]['participants'].keys():
+        debug(f'<leaveChallenge({_user},{_id})> trying to leave challenge')
+        CHALLENGES[_id]['participants'].pop(str(_user))
+        writeJSON()
+        debug(f'<leaveChallenge({_user},{_id})> user removed from challenge')
+        msg = f'You have been removed from \"{CHALLENGES[_id]["name"]}\".'
+    else: 
         debug(f'<leaveChallenge({_user},{_id})> user not found in challenge ({CHALLENGES[_id]["participants"].keys()})')
         msg = f'You aren\'t listed as participating in \"{CHALLENGES[_id]["name"]}\".'
     return msg

@@ -1,1 +1,1 @@
-{"20200904230810269063": {"name": "test", "start": "1", "end": "2", "resetCycle": "daily", "active": 1, "requirements": {"monkeys": 5, "chimps": 2}, "participants": {}}}
+{"20200904230810269063": {"name": "test", "start": "1", "end": "2", "resetCycle": "daily", "active": 1, "requirements": {"monkeys": 5, "chimps": 2}, "participants": {"141709062478888960": {}}}}
